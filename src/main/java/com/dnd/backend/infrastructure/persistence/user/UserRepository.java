@@ -2,13 +2,10 @@ package com.dnd.backend.infrastructure.persistence.user;
 
 import com.dnd.backend.domain.User;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
 
-@Repository
+import java.util.Optional;
+
+
 public interface UserRepository extends JpaRepository<User, Long> {
-
-    boolean existsByEmail(String email);
-    User findByEmail(String email);
-
-    Long findOrganizerIdByEmail(String email);
+    Optional<User> findByKakaoId(String email);
 }

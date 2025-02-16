@@ -1,96 +1,51 @@
 package com.dnd.backend.infrastructure.config;
 
 
-import com.dnd.backend.jwt.JwtFilter;
-import com.dnd.backend.jwt.JwtUtil;
-import com.dnd.backend.jwt.LoginFilter;
+import com.dnd.backend.application.user.OAuth2SuccessHandler;
+import com.dnd.backend.application.user.service.CustomOAuth2UserService;
+import com.dnd.backend.jwt.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
-import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 
-
-
-
 @Configuration
-@EnableWebSecurity
 @RequiredArgsConstructor
 public class SecurityConfig {
 
-    //AuthenticationManager가 인자로 받을 AuthenticationConfiguraion 객체 생성자 주입
-    private final AuthenticationConfiguration authenticationConfiguration;
-
-    private final JwtUtil jwtUtil;
-
-    @Bean
-    public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws  Exception {
-
-        return configuration.getAuthenticationManager();
-    }
-
-    @Bean
-    public BCryptPasswordEncoder bCryptPasswordEncoder(){
-
-        return new BCryptPasswordEncoder();
-    }
-
-    @Bean
-    public RoleHierarchy roleHierarchy() {
-
-        RoleHierarchyImpl hierarchy = new RoleHierarchyImpl();
-
-        hierarchy.setHierarchy("ROLE_ORGANIZER > ROLE_PARTICIPANT");
-
-        return hierarchy;
-    }
+    private final CustomOAuth2UserService customOAuth2UserService;
+    private final OAuth2SuccessHandler oAuth2SuccessHandler;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-
-        //csrf disable
         http
-                .csrf((auth) -> auth.disable());
+                .csrf(csrf -> csrf.disable())
 
-        //Form 로그인 방식 disable
-        http
-                .formLogin((auth) -> auth.disable());
+                .authorizeHttpRequests(auth -> auth
+                        // 로그인/콜백 관련 URL은 누구나 접근 가능
+                        .requestMatchers("/", "/h2-console/**", "/oauth2/**", "/login/**").permitAll()
+                        // 나머지는 인증 필요
+                        .anyRequest().authenticated()
+                )
 
-        //http basic 로그인 방식 disable
-        http
-                .httpBasic((auth) -> auth.disable());
+                // H2 콘솔 사용을 위한 설정(테스트용)
+                .headers(headers -> headers.frameOptions(frame -> frame.disable()))
 
-        //경로별 인가 작업
-        http
-                .authorizeHttpRequests((auth) -> auth
-                        .requestMatchers("/", "/login", "/join", "/join/detail").permitAll()
-                        .requestMatchers("/mypage", "/mypage/update").hasRole("PARTICIPANT")
-                        .anyRequest().permitAll()
-                );
+                // OAuth2 로그인 설정
+                .oauth2Login(oauth2 -> oauth2
+                        .userInfoEndpoint(userInfo -> userInfo
+                                .userService(customOAuth2UserService)
+                        )
+                        .successHandler(oAuth2SuccessHandler)
+                )
 
-        //경로 접근 필터
-        http
-                .addFilterBefore(new JwtFilter(jwtUtil), LoginFilter.class);
-
-        http
-                .addFilterAt(new LoginFilter(authenticationManager(authenticationConfiguration), jwtUtil), UsernamePasswordAuthenticationFilter.class);
-
-
-        //세션 설정
-        http
-                .sessionManagement((session) -> session
-                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+                // JWT 필터 등록 (UsernamePasswordAuthenticationFilter 전에)
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
-
 }
